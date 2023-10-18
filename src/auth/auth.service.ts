@@ -1,12 +1,14 @@
-import { ForbiddenException, Injectable } from '@nestjs/common'
+import { ForbiddenException, Injectable, Logger } from '@nestjs/common'
 import { JwtService } from '@nestjs/jwt'
-import { PrismaService } from '../prisma/prisma.service'
-import { AuthDto } from './dto'
 import * as bcrypt from 'bcrypt'
-import { Tokens } from './types'
+import { PrismaService } from '@orm/prisma.service'
+import { AuthDto } from '@auth/dto'
+import { Tokens } from '@auth/types'
 
 @Injectable()
 export class AuthService {
+	private readonly logger = new Logger(AuthService.name)
+
 	constructor(
 		private prisma: PrismaService,
 		private jwtService: JwtService,
@@ -18,8 +20,6 @@ export class AuthService {
 				email: dto.email,
 			},
 		})
-
-		console.log(user)
 
 		if (!user) throw new ForbiddenException('Access Denied')
 
@@ -33,9 +33,41 @@ export class AuthService {
 		return tokens
 	}
 
-	logout() {}
+	async logout(userId: number) {
+		const result = await this.prisma.user.updateMany({
+			where: {
+				id: userId,
+				hashedRt: {
+					not: null,
+				},
+			},
+			data: {
+				hashedRt: null,
+			},
+		})
 
-	refreshTokens() {}
+		this.logger.log('AuthService logout', result)
+	}
+
+	async refreshTokens(userId: number, rt: string) {
+		this.logger.log('refreshTokens', userId, rt)
+		const user = await this.prisma.user.findUnique({
+			where: {
+				id: userId,
+			},
+		})
+
+		if (!user || !user.hashedRt) throw new ForbiddenException('Access Denied')
+
+		const rtMatches = await bcrypt.compare(rt, user.hashedRt)
+
+		if (!rtMatches) throw new ForbiddenException('Access Denied')
+
+		const tokens = await this.getTokens(user.id, user.email)
+		await this.updateRtHash(user.id, tokens.refresh_token)
+
+		return tokens
+	}
 
 	async updateRtHash(userId: number, rt: string) {
 		const hash = await this.hashData(rt)
@@ -56,20 +88,14 @@ export class AuthService {
 	async getTokens(userId: number, email: string): Promise<Tokens> {
 		const [at, rt] = await Promise.all([
 			this.jwtService.signAsync(
-				{
-					sub: userId,
-					email,
-				},
+				{ sub: userId, email },
 				{
 					secret: 'at-secret',
 					expiresIn: 60 * 15,
 				},
 			),
 			this.jwtService.signAsync(
-				{
-					sub: userId,
-					email,
-				},
+				{ sub: userId, email },
 				{
 					secret: 'rt-secret',
 					expiresIn: 60 * 60 * 24 * 7,
@@ -86,10 +112,7 @@ export class AuthService {
 	async signupLocal(dto: AuthDto): Promise<Tokens> {
 		const hash = await this.hashData(dto.password)
 		const newUser = await this.prisma.user.create({
-			data: {
-				email: dto.email,
-				hash,
-			},
+			data: { email: dto.email, hash },
 		})
 
 		const tokens = await this.getTokens(newUser.id, newUser.email)

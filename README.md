@@ -77,3 +77,55 @@ Nest is [MIT licensed](LICENSE).
 -   npx prisma studio (prisma ui)
 -   npx prisma migrate dev --create-only (dev migrate)
 -   docker compose up(excute docker)
+
+## Tips
+
+### Upgrade package with Yarn
+
+> 아래 두가지 내용을 확인해보고 작업을 하자
+> 타입스크립트만 업그레이드 한 경우 `paths` 가 제대로 적용이 안된다
+
+```bash
+# package upgrade for "local"
+$ yarn upgrade-interactive [--latest]
+
+# package upgrade for "global"
+$ yarn global upgrade-interactive [--latest]
+```
+
+### Prisma Command
+
+#### Change field name
+
+1. 임시 마이그레이션 파일 만들기
+
+```bash
+npx prisma migrate dev --name [filenmae] --create-only
+```
+
+2. 마이그레이션 파일 수정
+
+```sql
+ALERT TABLE "Profile"
+RENAME COLUMN "biography" TO "biography"
+```
+
+3. 임시 마이그레이션 파일 DB에 적용
+
+```bash
+npx prisma migrate dev
+```
+
+#### DB reset, initialize
+
+```bash
+npx prisma migrate reset
+```
+
+#### DB 데이터 유지하면서 schema 수정사항 적용하기
+
+```bash
+# db가 유지되지 않는 상황에서는 오류 발생
+
+npx prisma db push
+```
